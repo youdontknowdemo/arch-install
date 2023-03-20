@@ -695,6 +695,7 @@ fi
 # ------------------------------------------------------------------------
 
 echo -e "Disable journaling services"
+sudo systemctl mask dev-mqueue.mount >/dev/null 2>&1
 sudo systemctl mask syslog.service >/dev/null 2>&1
 sudo systemctl mask rsyslog.service >/dev/null 2>&1
 sudo systemctl mask systemd-journal-flush.service >/dev/null 2>&1
@@ -702,9 +703,12 @@ sudo systemctl mask systemd-journal-catalog-update.service >/dev/null 2>&1
 sudo systemctl mask systemd-journald.service >/dev/null 2>&1
 sudo systemctl mask systemd-journald.socket >/dev/null 2>&1
 sudo systemctl mask systemd-journald-dev-log.socket >/dev/null 2>&1
+sudo systemctl mask journald-audit.socket >/dev/null 2>&1
 sudo systemctl mask systemd-journald-audit.socket >/dev/null 2>&1
 sudo systemctl mask logrotate.service >/dev/null 2>&1
 sudo systemctl mask logrotate.timer >/dev/null 2>&1
+sudo systemctl mask sys-kernel-tracing.mount >/dev/null 2>&1
+sudo systemctl mask sys-kernel-debug.mount >/dev/null 2>&1
 
 # ------------------------------------------------------------------------
 
