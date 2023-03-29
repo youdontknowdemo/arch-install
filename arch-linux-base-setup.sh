@@ -144,7 +144,7 @@ kwriteconfig5 --file kwalletrc --group Wallet --key "First Use" --type bool fals
 echo -e "LD_TRACE_LOADED_OBJECTS=0
 LD_DEBUG_OUTPUT=0
 LIBGL_DEBUG=0
-HISTCONTROL=ignoreboth
+HISTCONTROL=eraseboth
 HISTSIZE=0
 LESSHISTFILE=-
 LESSHISTSIZE=0
@@ -170,6 +170,7 @@ PKGS=(
 
     'acpid'                  # A daemon for delivering ACPI power management events with netlink support
     'cpupower'               # A tool to examine and tune power saving related features of your processor
+    'ethtool'                # An utility for controlling network drivers and hardware
     'irqbalance'             # IRQ balancing daemon for SMP systems
     'numactl'                # Simple NUMA policy support
     'pipewire-media-session' # Session Manager for PipeWire
@@ -286,7 +287,16 @@ blacklist jffs2
 blacklist hfs
 blacklist hfsplus
 blacklist squashfs
-blacklist udf" | sudo tee /etc/modprobe.d/nomisc.conf
+blacklist udf
+blacklist wl
+blacklist ssb
+blacklist b43
+blacklist b43legacy
+blacklist bcma
+blacklist bcm43xx
+blacklist brcm80211
+blacklist brcmfmac
+blacklist brcmsmac" | sudo tee /etc/modprobe.d/nomisc.conf
 # Disable bios limit
 echo -e "options processor ignore_ppc=1" | sudo tee /etc/modprobe.d/ignore_ppc.conf
 
@@ -295,7 +305,15 @@ echo -e "options processor ignore_ppc=1" | sudo tee /etc/modprobe.d/ignore_ppc.c
 # btrfs tweaks if disk is
 sudo systemctl enable btrfs-scrub@home.timer 
 sudo systemctl enable btrfs-scrub@-.timer 
+sudo btrfs property set / compression lz4
+sudo btrfs property set /home compression lz4
+sudo btrfs filesystem defragment -r -v -clz4 /
+sudo chattr +c /
+sudo btrfs filesystem defragment -r -v -clz4 /home
+sudo chattr +c /home
 sudo btrfs balance start -musage=0 -dusage=50 /
+sudo btrfs balance start -musage=0 -dusage=50 /home
+sudo chattr +C /swap/swapfile
 
 # ------------------------------------------------------------------------
 
@@ -336,6 +354,7 @@ kernel.sysrq = 0
 kernel.watchdog_thresh = 60
 kernel.nmi_watchdog = 0
 kernel.timer_migration = 0
+kernel.core_pipe_limit = 0
 kernel.core_uses_pid = 1
 kernel.hung_task_timeout_secs = 0
 kernel.sched_rr_timeslice_ms = -1
@@ -354,19 +373,25 @@ kernel.sched_latency_ns = 400000
 kernel.sched_min_granularity_ns = 400000
 kernel.sched_wakeup_granularity_ns = 500000
 kernel.sched_scaling_enable = 1
+kernel.sched_itmt_enabled = 1
 kernel.numa_balancing = 1
 kernel.panic = 0
 kernel.panic_on_oops = 0
 kernel.perf_cpu_time_max_percent = 10
 kernel.printk_devkmsg = off
+kernel.compat-log = 0
 kernel.random.urandom_min_reseed_secs = 120
+kernel.unprivileged_bpf_disabled = 1
 kernel.perf_event_paranoid = -1
 kernel.kptr_restrict = 0
 kernel.randomize_va_space = 0
 kernel.exec-shield = 0
 kernel.kexec_load_disabled = 0
 kernel.acpi_video_flags = 0
+kernel.unknown_nmi_panic = 0
+kernel.panic_on_unrecovered_nmi = 0
 dev.i915.perf_stream_paranoid = 0
+dev.scsi.logging_level = 0
 debug.exception-trace = 0
 debug.kprobes-optimization = 1
 fs.inotify.max_user_watches = 1048576
@@ -410,6 +435,9 @@ sudo swapoff -av && sudo swapon -av
 # ------------------------------------------------------------------------
 
 # Enable trim
+sudo systemctl enable fstrim.service
+sudo systemctl enable fstrim.timer
+sudo systemctl start fstrim.service
 sudo systemctl start fstrim.timer
 echo -e "Run fstrim"
 sudo fstrim -Av
@@ -467,6 +495,8 @@ sudo systemctl mask NetworkManager-wait-online.service >/dev/null 2>&1
 
 echo -e "Disable SELINUX"
 sudo sed -i -e 's/^SELINUX=.*/SELINUX=disabled/g' /etc/selinux/config
+sudo sed -i -e 's/^SELINUXTYPE=.*/SELINUXTYPE=minimum/g' /etc/selinux/config
+sudo setenforce 0
 
 # ------------------------------------------------------------------------
 
@@ -562,6 +592,32 @@ sudo systemctl --global disable speech-dispatcher
 echo -e "Disable smartmontools"
 sudo systemctl disable smartmontools
 sudo systemctl --global disable smartmontools
+echo -e "Disable kerneloops"
+sudo systemctl disable kerneloops.service
+sudo systemctl --global disable kerneloops.service
+echo -e "Disable whoopsie"
+sudo systemctl disable whoopsie.service
+sudo systemctl --global disable whoopsie.service
+echo -e "Disable saned service/socket"
+sudo systemctl disable saned.service
+sudo systemctl --global disable saned.service
+sudo systemctl disable saned.socket
+sudo systemctl --global disable saned.socket
+echo -e "Disable apport service/socket"
+sudo systemctl disable apport.service
+sudo systemctl --global disable apport.service
+sudo systemctl disable apport-forward.socket
+sudo systemctl --global disable apport-forward.socket
+echo -e "Disable brltty"
+sudo systemctl disable brltty.service
+sudo systemctl --global disable brltty.service
+sudo systemctl disable brltty-udev.service
+sudo systemctl --global disable brltty-udev.service
+echo -e "Disable man-db service/timer"
+sudo systemctl disable man-db.service
+sudo systemctl --global disable man-db.service
+sudo systemctl disable man-db.timer
+sudo systemctl --global disable man-db.timer
 
 # ------------------------------------------------------------------------
 
@@ -613,19 +669,27 @@ sudo systemctl mask remote-fs.target >/dev/null 2>&1
 # ------------------------------------------------------------------------
 
 ## Some powersavings
-echo "options cec debug=0
+echo "options vfio_pci disable_vga=1
+options cec debug=0
 options kvm mmu_audit=0
+options kvm ignore_msrs=1
+options kvm report_ignored_msrs=0
+options kvm kvmclock_periodic_sync=1
 options nfs enable_ino64=1
 options pstore backend=null
+options libata allow_tpm=0
+options libata ignore_hpa=0
 options libahci ignore_sss=1
+options libahci skip_host_reset=1
+options snd_hda_intel power_save=1
 options snd_ac97_codec power_save=1
 options uhci-hcd debug=0
 options usbhid mousepoll=4
 options usb-storage quirks=p
 options usbcore usbfs_snoop=0
-options usbcore autosuspend=5" | tee /etc/modprobe.d/powersavings.conf
+options usbcore autosuspend=5" | sudo tee /etc/modprobe.d/powersavings.conf
 echo -e "min_power" | sudo tee /sys/class/scsi_host/*/link_power_management_policy
-echo -e "1" | sudo tee /sys/module/snd_hda_intel/parameters/power_save
+echo 1 | sudo tee /sys/module/snd_hda_intel/parameters/power_save
 echo -e "auto" | sudo tee /sys/bus/{i2c,pci}/devices/*/power/control
 sudo powertop --auto-tune && sudo powertop --auto-tune
 sudo cpupower frequency-set -g powersave
@@ -654,6 +718,7 @@ upx ~/.local/bin/*
 
 echo -e "Improve I/O throughput"
 echo 32 | sudo tee /sys/block/sd*[!0-9]/queue/iosched/fifo_batch
+echo 32 | sudo tee /sys/block/mmcblk*/queue/iosched/fifo_batch
 echo 32 | sudo tee /sys/block/nvme*/queue/iosched/fifo_batch
 
 # ------------------------------------------------------------------------
@@ -669,16 +734,28 @@ sudo systemctl --global disable foo.service
 
 # ------------------------------------------------------------------------
 
-## Improve wifi
+## Improve wifi and ethernet
 if ip -o link | egrep -q wlan ; then
     echo -e "options iwlwifi 11n_disable=8" | sudo tee /etc/modprobe.d/iwlwifi-speed.conf
     echo -e "options rfkill default_state=0 master_switch_mode=1" | sudo tee /etc/modprobe.d/wlanextra.conf
+    sudo ethtool -K wlan0 gro on
+    sudo ethtool -K wlan0 gso on
+    sudo ethtool -c wlan0
+    sudo iwconfig wlan0 txpower auto
+    sudo iwpriv wlan0 set_power 5
+else
+    sudo ethtool -s eth0 wol d
+    sudo ethtool -K eth0 gro off
+    sudo ethtool -K eth0 gso off
+    sudo ethtool -C eth0 adaptive-rx on
+    sudo ethtool -C eth0 adaptive-tx on
+    sudo ethtool -c eth0
 fi
 
 # ------------------------------------------------------------------------
 
 echo -e "Enable HDD write caching"
-sudo hdparm -W 1 /dev/sd*[!0-9]
+sudo hdparm -A1 -W1 -B254 -S0 /dev/sd*[!0-9]
 
 # ------------------------------------------------------------------------
 
@@ -696,10 +773,28 @@ fi
 
 # ------------------------------------------------------------------------
 
+## Improve PCI latency
+sudo setpci -v -d *:* latency_timer=48 >/dev/null 2>&1
+
+# ------------------------------------------------------------------------
+
+## Improve preload
+sudo sed -i -e 's/sortstrategy =.*/sortstrategy = 0/' /etc/preload.conf
+
+# ------------------------------------------------------------------------
+
+echo -e "Disable fsck"
+sudo tune2fs -c 0 -i 0 /dev/sd*[!0-9]
+sudo tune2fs -c 0 -i 0 /dev/mmcblk*
+sudo tune2fs -c 0 -i 0 /dev/nvme*
+
+# ------------------------------------------------------------------------
+
 echo -e "Disable journaling services"
 sudo systemctl mask dev-mqueue.mount >/dev/null 2>&1
-sudo systemctl mask syslog.service >/dev/null 2>&1
 sudo systemctl mask rsyslog.service >/dev/null 2>&1
+sudo systemctl mask syslog.service >/dev/null 2>&1
+sudo systemctl mask syslog.socket >/dev/null 2>&1
 sudo systemctl mask systemd-journal-flush.service >/dev/null 2>&1
 sudo systemctl mask systemd-journal-catalog-update.service >/dev/null 2>&1
 sudo systemctl mask systemd-journald.service >/dev/null 2>&1
@@ -719,14 +814,14 @@ sudo sed -i -e 's/GRUB_TIMEOUT=.*/GRUB_TIMEOUT=1/' /etc/default/grub
 sudo sed -i -e 's/GRUB_RECORDFAIL_TIMEOUT=.*/GRUB_RECORDFAIL_TIMEOUT=0/' /etc/default/grub
 ## Change GRUB defaults
 sudo sed -i -e 's/GRUB_DISABLE_OS_PROBER=.*/GRUB_DISABLE_OS_PROBER=true/' /etc/default/grub
-sudo sed -i -e 's/GRUB_CMDLINE_LINUX_DEFAULT=.*/GRUB_CMDLINE_LINUX_DEFAULT="quiet rootfstype=ext4,btrfs,xfs,f2fs biosdevname=0 nouveau.modeset=0 nvidia-drm.modeset=1 nvidia-uvm.modeset=1 amdgpu.modeset=1 amdgpu.dpm=1 amdgpu.audio=1 amdgpu.dc=1 i915.enable_ppgtt=3 i915.fastboot=0 i915.enable_fbc=1 i915.enable_guc=3 i915.lvds_downclock=1 i915.semaphores=1 i915.reset=0 i915.enable_dc=2 i915.enable_psr=0 i915.enable_cmd_parser=1 i915.enable_rc6=1 i915.lvds_use_ssc=0 i915.use_mmio_flip=1 i915.disable_power_well=1 i915.powersave=1 snd-hda-intel.power_save=1 snd-hda-intel.enable_msi=1 pcie_aspm=off pci=noaer drm.vblankoffdelay=1 vt.global_cursor_default=0 scsi_mod.use_blk_mq=1 mitigations=off zswap.enabled=1 zswap.compressor=lz4 zswap.max_pool_percent=20 zswap.zpool=zsmalloc plymouth.ignore-serial-consoles loglevel=0 rd.systemd.show_status=auto rd.udev.log_level=0 udev.log_priority=3 audit=0 hpet=disable no_timer_check cryptomgr.notests iommu=soft amd_iommu=on intel_iommu=igfx_off kvm-intel.nested=1 iwlmvm_power_scheme=2 intel_pstate=disable intel_idle.max_cstate=0 noreplace-smp page_poison=1 page_alloc.shuffle=1 rcupdate.rcu_expedited=1 tsc=reliable nowatchdog idle=nomwait noatime pti=on init_on_free=0 boot_delay=0 io_delay=none rootdelay=0 cpu_init_udelay=1 acpi=force acpi_enforce_resources=lax acpi_backlight=vendor processor.max_cstate=0 skew_tick=1 nosoftlockup mce=ignore_ce mem_sleep_default=deep elevator=noop enable_mtrr_cleanup mtrr_spare_reg_nr=1 clearcpuid=514 random.trust_cpu=on no_entry_flush  no_uaccess_flush nopti no_stf_barrier nokaslr norandmaps mds=off l1tf=off noibrs noibpb nospectre_v2 nospectre_v1 kpti=off nopcid srbds=off hardened_usercopy=off ssbd=force-off nohz=on nohz_full=all highres=off rcu_nocbs=all rcu_nocb_poll=1 irqpoll irqaffinity=0 isolcpus kthread_cpus=0 hugepages=0 msr.allow_writes=on enforcing=0 module.sig_unenforce no_hash_pointers init_on_alloc=0 ahci.mobile_lpm_policy=0 processor.nocst=1 ftrace_enabled=0 fsck.mode=skip apparmor=0 cgroup_disable=memory cgroup_no_v1=all noautogroup noresume"/' /etc/default/grub
+sudo sed -i -e 's/GRUB_CMDLINE_LINUX_DEFAULT=.*/GRUB_CMDLINE_LINUX_DEFAULT="quiet rootfstype=ext4,btrfs,xfs,f2fs biosdevname=0 ipv6.disable=1 nouveau.modeset=0 nvidia-drm.modeset=1 nvidia-uvm.modeset=1 amdgpu.modeset=1 amdgpu.dpm=1 amdgpu.audio=1 amdgpu.dc=1 i915.enable_ppgtt=3 i915.fastboot=0 i915.enable_fbc=1 i915.enable_guc=3 i915.lvds_downclock=1 i915.semaphores=1 i915.enable_rc6=7 i915.reset=0 i915.enable_dc=2 i915.enable_psr=0 i915.enable_cmd_parser=1 i915.enable_rc6=1 i915.lvds_use_ssc=0 i915.use_mmio_flip=1 i915.disable_power_well=1 i915.powersave=1 snd-hda-intel.power_save=1 snd-hda-intel.enable_msi=1 pcie_aspm=off pci=noaer drm.vblankoffdelay=1 vt.global_cursor_default=0 scsi_mod.use_blk_mq=y dm_mod.use_blk_mq=y mitigations=off zswap.enabled=1 zswap.compressor=lz4 zswap.max_pool_percent=20 zswap.zpool=zsmalloc plymouth.ignore-serial-consoles loglevel=0 rd.systemd.show_status=auto rd.udev.log_level=0 udev.log_priority=3 audit=0 hpet=disable no_timer_check cryptomgr.notests iommu=soft amd_iommu=on intel_iommu=igfx_off kvm-intel.nested=1 iwlmvm_power_scheme=2 intel_pstate=disable intel_idle.max_cstate=0 noreplace-smp page_poison=1 page_alloc.shuffle=1 rcupdate.rcu_expedited=1 tsc=reliable nowatchdog idle=nomwait noatime pti=on init_on_free=0 boot_delay=0 io_delay=none rootdelay=0 cpu_init_udelay=1 acpi=force acpi_enforce_resources=lax acpi_backlight=vendor processor.max_cstate=0 skew_tick=1 nosoftlockup mce=ignore_ce mem_sleep_default=deep elevator=noop enable_mtrr_cleanup mtrr_spare_reg_nr=1 clearcpuid=514 random.trust_cpu=on no_entry_flush  no_uaccess_flush nopti no_stf_barrier nokaslr norandmaps mds=off l1tf=off noibrs noibpb nospectre_v2 nospectre_v1 kpti=off nopcid srbds=off hardened_usercopy=off ssbd=force-off nohz=on nohz_full=all highres=off rcu_nocbs=all rcu_nocb_poll=1 irqpoll irqaffinity=0 isolcpus kthread_cpus=0 hugepages=0 transparent_hugepage=madvise msr.allow_writes=on module.sig_unenforce no_hash_pointers init_on_alloc=0 ahci.mobile_lpm_policy=0 processor.nocst=1 ftrace_enabled=0 fsck.repair=no fsck.mode=skip apparmor=0 cgroup_disable=memory cgroup_no_v1=all noautogroup noresume"/' /etc/default/grub
 sudo update-grub
 sudo grub-mkconfig -o /boot/grub/grub.cfg
 echo -e "Disable GPU polling"
 echo -e "options drm_kms_helper poll=0" | sudo tee /etc/modprobe.d/disable-gpu-polling.conf
 echo -e "Enable BFQ scheduler"
 echo -e "bfq" | sudo tee /etc/modules-load.d/bfq.conf
-echo -e 'ACTION=="add|change", KERNEL=="sd*[!0-9]|sr*|mmcblk[0-9]*|nvme[0-9]*", ATTR{queue/rotational}=="1", ATTR{queue/iosched/low_latency}="1", ATTR{queue/scheduler}="bfq"' | sudo tee /etc/udev/rules.d/60-scheduler.rules
+echo -e 'ACTION=="add|change", KERNEL=="sd*[!0-9]|sr*|mmcblk[0-9]*|nvme[0-9]*", ATTR{queue/rotational}=="1", ATTR{queue/add_random}=="1", ATTR{queue/iosched/slice_idle}="0", ATTR{queue/iosched/front_merges}="1", ATTR{queue/iosched/writes_starved}="16", ATTR{queue/iosched/fifo_batch}="32", ATTR{queue/iosched/low_latency}="1", ATTR{queue/scheduler}="bfq"' | sudo tee /etc/udev/rules.d/60-scheduler.rules
 ## Optimize mkinitcpio
 sudo sed -i -e 's/HOOKS=.*/HOOKS=(base udev autodetect keyboard keymap modconf block filesystems)/' /etc/mkinitcpio.conf
 ## Enable lz4 compression
