@@ -1,8 +1,8 @@
 # arch-linux-base-setup
 
-## **Most of the post-install/setup script (setup.sh/arch-lbs-devel.sh) will run from the user account thats is well qalified and promoted as such?**
+## **Most of the post-install/setup script (setup.sh/arch-lbs-devel.sh) will run from the user account that is well qalified and promoted as such?**
 
-### IF you have your own baisic arch linux install, run that first and then RUN:
+### IF you have your own baiic arch linux install, run that first and then RUN:
 
 ```sh
 curl --tlsv1.2 -fsSL https://raw.githubusercontent.com/YurinDoctrine/arch-linux-base-setup/main/arch-linux-base-setup.sh >arch-lbs-devel.sh && \
